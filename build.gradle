@@ -5,8 +5,8 @@
 
 buildscript {
     ext {
-        vXnatDev = '1.7.5-RC1-SNAPSHOT'
-        vXnat = '1.7.5-SNAPSHOT'
+        vXnat = '1.7.5.1'
+        vXnatPlugin = '1.7.5'
     }
     repositories {
         mavenLocal()
@@ -24,7 +24,7 @@ buildscript {
         }
     }
     dependencies {
-        classpath "org.nrg.xnat.build:xnat-data-builder:${vXnat}"
+        classpath "org.nrg.xnat.build:xnat-data-builder:${vXnatPlugin}"
         classpath "io.spring.gradle:dependency-management-plugin:1.0.3.RELEASE"
         classpath "gradle.plugin.com.palantir.gradle.gitversion:gradle-git-version:0.8.0"
     }
@@ -73,6 +73,7 @@ configurations {
 
     all {
         exclude group: "com.sun.media", module: "jai_imageio"
+        exclude group: "edu.ucar"
         exclude group: "javax.sql", module: "jdbc-stdext"
         exclude group: "javax.transaction", module: "jta"
     }
@@ -83,9 +84,9 @@ dependencyManagement.imports {
 }
 
 dependencies {
-    compileOnly "org.nrg.xnat:web:${vXnatDev}"
+    compileOnly "org.nrg.xnat:web"
     compileOnly "org.nrg.xnat:xnat-data-models"
-    compileOnly "org.nrg.xdat:core:${vXnatDev}"
+    compileOnly "org.nrg.xdat:core"
     compileOnly "org.nrg:prefs"
     compileOnly "org.nrg:framework"
     compileOnly "org.springframework:spring-web"

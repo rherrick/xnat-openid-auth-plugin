@@ -17,18 +17,10 @@
  */
 package au.edu.qcif.xnat.auth.openid;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
 import java.util.Map;
 
-import org.nrg.xdat.entities.UserAuthI;
+import org.apache.commons.lang3.StringUtils;
 import org.nrg.xdat.security.XDATUser;
-import org.nrg.xft.exception.MetaDataException;
-import org.nrg.xft.security.UserI;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.common.OAuth2AccessToken;
 
 /**
@@ -38,38 +30,19 @@ import org.springframework.security.oauth2.common.OAuth2AccessToken;
  * 
  */
 public class OpenIdConnectUserDetails extends XDATUser {
-
-	private static final long serialVersionUID = 1L;
-	private OAuth2AccessToken token;
-	private String email;
-	private Map<String, String> openIdUserInfo;
-	private String name;
-	private String picture;
-	private String firstName;
-	private String lastName;
-	private String pw;
-	private String username;
-	private String providerId;
-	private OpenIdAuthPlugin plugin;
-
-	public OpenIdConnectUserDetails(String providerId, Map<String, String> userInfo, OAuth2AccessToken token,
-			OpenIdAuthPlugin plugin) {
-		this.openIdUserInfo = userInfo;
-		this.providerId = providerId;
+	public OpenIdConnectUserDetails(final Map<String, String> userInfo, final OAuth2AccessToken token, final OpenIdAuthPlugin plugin) {
 		this.setUsername(providerId + "_" + userInfo.get("sub"));
 		this.token = token;
 		this.plugin = plugin;
-
-		this.email = getUserInfo(userInfo, "emailProperty", "");
-		this.setFirstname(getUserInfo(userInfo, "givenNameProperty", ""));
-		this.setLastname(getUserInfo(userInfo, "familyNameProperty", ""));
+		this.email = getUserInfo(userInfo, "emailProperty");
+		this.setFirstname(getUserInfo(userInfo, "givenNameProperty"));
+		this.setLastname(getUserInfo(userInfo, "familyNameProperty"));
 		this.name = userInfo.get("name");
 		this.picture = userInfo.get("picture");
 	}
 
-	private String getUserInfo(Map<String, String> userInfo, String propName, String defaultVal) {
-		String propVal = userInfo.get(plugin.getProperty(providerId, propName));
-		return propVal != null ? propVal : defaultVal;
+	private String getUserInfo(final Map<String, String> userInfo, final String property) {
+		return StringUtils.defaultIfBlank(userInfo.get(plugin.getProperty(property)), "");
 	}
 
 	public OAuth2AccessToken getToken() {
@@ -112,4 +85,15 @@ public class OpenIdConnectUserDetails extends XDATUser {
 		this.lastName = lastname;
 	}
 
+	private OAuth2AccessToken   token;
+	private String              email;
+	private Map<String, String> _userInfo;
+	private String              name;
+	private String              picture;
+	private String              firstName;
+	private String              lastName;
+	private String              pw;
+	private String              username;
+	private String              providerId;
+	private OpenIdAuthPlugin    plugin;
 }
