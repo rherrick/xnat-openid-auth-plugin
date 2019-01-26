@@ -28,8 +28,6 @@ import org.nrg.xft.event.EventDetails;
 import org.nrg.xft.event.EventUtils;
 import org.nrg.xft.security.UserI;
 import org.nrg.xnat.security.exceptions.NewAutoAccountNotAutoEnabledException;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
@@ -57,25 +55,21 @@ import java.util.Map;
  */
 @Slf4j
 public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter {
-    public OpenIdConnectFilter(final String defaultFilterProcessesUrl, final OpenIdAuthPlugin plugin, final SerializerService serializer) {
-        super(defaultFilterProcessesUrl);
-        log.debug("Created filter for " + defaultFilterProcessesUrl);
+    public OpenIdConnectFilter(final OpenIdAuthPlugin plugin, final OAuth2RestTemplate oAuth2RestTemplate, final SerializerService serializer) {
+        super(plugin.getProperty("preEstablishedRedirUri"));
+        log.debug("Created filter for URI {}", plugin.getProperty("preEstablishedRedirUri"));
         setAuthenticationManager(new NoopAuthenticationManager());
+
         _plugin = plugin;
+        _oAuth2RestTemplate = oAuth2RestTemplate;
         _serializer = serializer;
 
         final String allowedEmailDomains = _plugin.getProperty("allowedEmailDomains");
         _allowedDomains = StringUtils.isNotBlank(allowedEmailDomains) ? Arrays.asList(allowedEmailDomains.toLowerCase().split("\\s*,\\s*")) : Collections.<String>emptyList();
     }
 
-    @Autowired
-    @Qualifier("xnatOAuth2RestTemplate")
-    public void setOAuth2RestTemplate(final OAuth2RestTemplate oAuth2RestTemplate) {
-        _oAuth2RestTemplate = oAuth2RestTemplate;
-    }
-
     @Override
-    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException, IOException {
+    public Authentication attemptAuthentication(final HttpServletRequest request, final HttpServletResponse response) throws AuthenticationException, IOException {
         log.debug("Executed attemptAuthentication...");
         final OAuth2AccessToken accessToken;
         try {
@@ -96,7 +90,7 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
             log.debug("===== : {}", tokenDecoded.getClaims());
             final Map<String, String> authInfo = _serializer.deserializeJsonToMapOfStrings(tokenDecoded.getClaims());
 
-            final OpenIdConnectUserDetails user = new OpenIdConnectUserDetails(providerId, authInfo, accessToken, _plugin);
+            final OpenIdConnectUserDetails user = new OpenIdConnectUserDetails(providerId, _plugin, authInfo, accessToken);
 
             if (shouldFilterEmailDomains() && !isAllowedEmailDomain(user.getEmail())) {
                 log.error("Domain not allowed: {}", user.getEmail());

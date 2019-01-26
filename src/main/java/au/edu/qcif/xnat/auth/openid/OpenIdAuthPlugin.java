@@ -22,12 +22,14 @@ import com.google.common.collect.Lists;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.nrg.framework.annotations.XnatPlugin;
+import org.nrg.framework.services.SerializerService;
 import org.nrg.xdat.preferences.SiteConfigPreferences;
 import org.nrg.xnat.security.XnatSecurityExtension;
 import org.nrg.xnat.security.provider.AuthenticationProviderConfigurationLocator;
 import org.nrg.xnat.security.provider.ProviderAttributes;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Scope;
 import org.springframework.context.annotation.ScopedProxyMode;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
@@ -67,10 +69,11 @@ import java.util.Properties;
 @Slf4j
 public class OpenIdAuthPlugin implements XnatSecurityExtension {
     @Autowired
-    public OpenIdAuthPlugin(final AuthenticationProviderConfigurationLocator locator, final SiteConfigPreferences preferences) {
+    public OpenIdAuthPlugin(final AuthenticationProviderConfigurationLocator locator, final SiteConfigPreferences preferences, final SerializerService serializer) {
         _properties = loadProviderProperties(locator);
         _enabledProviders = Arrays.asList(getProperty("enabled").split(","));
         _siteUrl = getSiteUrl(preferences);
+        _serializer = serializer;
 
         INSTANCE = this;
     }
@@ -110,8 +113,10 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
 
     @Bean
     @Scope("prototype")
+    @DependsOn("xnatOAuth2RestTemplate")
     public OpenIdConnectFilter openIdConnectFilter() {
-        return new OpenIdConnectFilter(getProperty("preEstablishedRedirUri"), this);
+        log.error("Now creating openIdConnectFilter");
+        return new OpenIdConnectFilter(this, _oAuth2RestTemplate, _serializer);
     }
 
     @Bean
@@ -125,7 +130,7 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
         log.debug("Provider ID is: {}", providerId);
         request.getSession().setAttribute("providerId", providerId);
 
-        return new OAuth2RestTemplate(getProtectedResourceDetails(providerId), clientContext);
+        return _oAuth2RestTemplate = new OAuth2RestTemplate(getProtectedResourceDetails(providerId), clientContext);
     }
 
     public List<String> getEnabledProviders() {
@@ -144,7 +149,7 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
         return _properties.getProperty(property, defaultValue);
     }
 
-    private OAuth2ProtectedResourceDetails getProtectedResourceDetails() {
+    private OAuth2ProtectedResourceDetails getProtectedResourceDetails(final String providerId) {
         final String grantType = getProperty("grantType", "authorization_code");
 
         final BaseOAuth2ProtectedResourceDetails details;
@@ -173,7 +178,6 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
                 throw new RuntimeException("Unknown grant type: " + grantType);
         }
 
-        final String   id                = getProperty("clientId");
         final String   clientId          = getProperty("clientId");
         final String   clientSecret      = getProperty("clientSecret");
         final String   accessTokenUri    = getProperty("accessTokenUri");
@@ -182,9 +186,9 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
         final String   preEstablishedUri = getSiteUrl() + getProperty("preEstablishedRedirUri");
         final String[] scopes            = getProperty("scopes").split(",");
 
-        log.debug("Creating protected resource details of provider: {}\nid: {}\nclientId: {}\nclientSecret: {}\naccessTokenUri: {}\nuserAuthUri: {}\ntokenName: {}\npreEstablishedUri: {}\nscopes: {}", id, clientId, clientSecret, accessTokenUri, userAuthUri, tokenName, preEstablishedUri, scopes);
+        log.debug("Creating protected resource details of provider: {}\nid: {}\nclientId: {}\nclientSecret: {}\naccessTokenUri: {}\nuserAuthUri: {}\ntokenName: {}\npreEstablishedUri: {}\nscopes: {}", providerId, clientId, clientSecret, accessTokenUri, userAuthUri, tokenName, preEstablishedUri, scopes);
 
-        details.setId(id);
+        details.setId(providerId);
         details.setClientId(clientId);
         details.setClientSecret(clientSecret);
         details.setAccessTokenUri(accessTokenUri);
@@ -236,7 +240,10 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
 
     private static OpenIdAuthPlugin INSTANCE;
 
-    private final Properties                                 _properties;
-    private final List<String>                               _enabledProviders;
-    private final String                                     _siteUrl;
+    private final Properties         _properties;
+    private final List<String>       _enabledProviders;
+    private final String             _siteUrl;
+    private final SerializerService _serializer;
+
+    private       OAuth2RestTemplate _oAuth2RestTemplate;
 }
