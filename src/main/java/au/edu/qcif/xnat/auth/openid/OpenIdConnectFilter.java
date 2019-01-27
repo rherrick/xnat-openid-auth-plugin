@@ -18,6 +18,7 @@
 package au.edu.qcif.xnat.auth.openid;
 
 import au.edu.qcif.xnat.auth.openid.tokens.OpenIdAuthToken;
+import com.google.common.collect.ImmutableMultimap;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.nrg.framework.services.SerializerService;
@@ -48,6 +49,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import static org.nrg.xnat.security.provider.ProviderAttributes.PROVIDER_AUTO_ENABLED;
+import static org.nrg.xnat.security.provider.ProviderAttributes.PROVIDER_AUTO_VERIFIED;
+
 /**
  * Main Spring Security authentication filter.
  *
@@ -55,17 +59,22 @@ import java.util.Map;
  */
 @Slf4j
 public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter {
+    public static final String PREESTABLISHED_REDIR_URI = "/openid-login";
+
     public OpenIdConnectFilter(final OpenIdAuthPlugin plugin, final OAuth2RestTemplate oAuth2RestTemplate, final SerializerService serializer) {
-        super(plugin.getProperty("preEstablishedRedirUri"));
-        log.debug("Created filter for URI {}", plugin.getProperty("preEstablishedRedirUri"));
+        super(plugin.getDefaultSiteUrl() + PREESTABLISHED_REDIR_URI);
+        log.debug("Created filter for URI {}", plugin.getDefaultSiteUrl() + PREESTABLISHED_REDIR_URI);
         setAuthenticationManager(new NoopAuthenticationManager());
 
         _plugin = plugin;
         _oAuth2RestTemplate = oAuth2RestTemplate;
         _serializer = serializer;
 
-        final String allowedEmailDomains = _plugin.getProperty("allowedEmailDomains");
-        _allowedDomains = StringUtils.isNotBlank(allowedEmailDomains) ? Arrays.asList(allowedEmailDomains.toLowerCase().split("\\s*,\\s*")) : Collections.<String>emptyList();
+        final ImmutableMultimap.Builder<String, String> builder = ImmutableMultimap.builder();
+        for (final String providerId : _plugin.getEnabledProviders()) {
+            builder.putAll(providerId, getAllowedEmailDomain(providerId));
+        }
+        _allowedEmailDomainsByProviderId = builder.build();
     }
 
     @Override
@@ -92,7 +101,7 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
 
             final OpenIdConnectUserDetails user = new OpenIdConnectUserDetails(providerId, _plugin, authInfo, accessToken);
 
-            if (shouldFilterEmailDomains() && !isAllowedEmailDomain(user.getEmail())) {
+            if (shouldFilterEmailDomains(providerId) && !isAllowedEmailDomain(providerId, user.getEmail())) {
                 log.error("Domain not allowed: {}", user.getEmail());
                 throw new NewAutoAccountNotAutoEnabledException("New OpenID user, not on the domain whitelist.", user);
             }
@@ -113,8 +122,8 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
             } catch (UserInitException e) {
                 throw new BadCredentialsException("Cannot init OpenID user " + user.getUsername() + " from the database.", e);
             } catch (UserNotFoundException e) {
-                final boolean userAutoEnabled  = Boolean.parseBoolean(_plugin.getProperty("auto.enabled", "false"));
-                final boolean userAutoVerified = Boolean.parseBoolean(_plugin.getProperty("auto.verified", "false"));
+                final boolean userAutoEnabled  = Boolean.parseBoolean(_plugin.getProviderProperty(providerId, PROVIDER_AUTO_ENABLED, "false"));
+                final boolean userAutoVerified = Boolean.parseBoolean(_plugin.getProviderProperty(providerId, PROVIDER_AUTO_VERIFIED, "false"));
 
                 final UserI xdatUser = Users.createUser();
                 xdatUser.setEmail(user.getEmail());
@@ -124,7 +133,7 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
                 xdatUser.setEnabled(userAutoEnabled);
                 xdatUser.setVerified(userAutoVerified);
 
-                if (Boolean.parseBoolean(_plugin.getProperty("forceUserCreate", "false"))) {
+                if (Boolean.parseBoolean(_plugin.getProviderProperty(providerId, "forceUserCreate", "false"))) {
                     final EventDetails event = new EventDetails(EventUtils.CATEGORY.PROJECT_ACCESS, EventUtils.TYPE.PROCESS,"added new user", "new user logged in", "OpenID connect new user");
                     try {
                         Users.save(xdatUser, Users.getAdminUser(), true, event);
@@ -143,27 +152,29 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
         }
     }
 
-    private boolean isAllowedEmailDomain(final String email) {
-        return _allowedDomains.contains(StringUtils.removeAll(email, "^.*@").toLowerCase());
+    private boolean isAllowedEmailDomain(final String providerId, final String email) {
+        return !_allowedEmailDomainsByProviderId.containsKey(providerId) || _allowedEmailDomainsByProviderId.get(providerId).contains(StringUtils.removeAll(email, "^.*@").toLowerCase());
     }
 
-    private boolean shouldFilterEmailDomains() {
-        return Boolean.parseBoolean(_plugin.getProperty("shouldFilterEmailDomains"));
+    private List<String> getAllowedEmailDomain(final String providerId) {
+        final String allowedEmailDomains = _plugin.getProviderProperty(providerId, "allowedEmailDomains");
+        return StringUtils.isBlank(allowedEmailDomains) ? Collections.<String>emptyList() : Arrays.asList(allowedEmailDomains.toLowerCase().split("\\s*,\\s*"));
+    }
+
+    private boolean shouldFilterEmailDomains(final String providerId) {
+        return Boolean.parseBoolean(_plugin.getProviderProperty(providerId, "shouldFilterEmailDomains", "false"));
     }
 
     private static class NoopAuthenticationManager implements AuthenticationManager {
-
         @Override
         public Authentication authenticate(Authentication authentication) throws AuthenticationException {
             throw new UnsupportedOperationException("No authentication should be done with this AuthenticationManager");
         }
-
     }
 
-
-    private final OpenIdAuthPlugin  _plugin;
-    private final SerializerService _serializer;
-    private final List<String>      _allowedDomains;
+    private final OpenIdAuthPlugin                  _plugin;
+    private final SerializerService                 _serializer;
+    private final ImmutableMultimap<String, String> _allowedEmailDomainsByProviderId;
 
     private OAuth2RestTemplate _oAuth2RestTemplate;
 }

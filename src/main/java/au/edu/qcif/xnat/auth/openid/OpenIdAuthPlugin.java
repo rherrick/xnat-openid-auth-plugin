@@ -18,7 +18,8 @@
 package au.edu.qcif.xnat.auth.openid;
 
 import com.google.common.base.Function;
-import com.google.common.collect.Lists;
+import com.google.common.base.Predicates;
+import com.google.common.collect.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.nrg.framework.annotations.XnatPlugin;
@@ -51,12 +52,10 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.servlet.http.HttpServletRequest;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 
 /**
  * XNAT Authentication plugin.
@@ -70,28 +69,40 @@ import java.util.Properties;
 public class OpenIdAuthPlugin implements XnatSecurityExtension {
     @Autowired
     public OpenIdAuthPlugin(final AuthenticationProviderConfigurationLocator locator, final SiteConfigPreferences preferences, final SerializerService serializer) {
-        _properties = loadProviderProperties(locator);
-        _enabledProviders = Arrays.asList(getProperty("enabled").split(","));
-        _siteUrl = getSiteUrl(preferences);
+        _providerProperties = loadProviderProperties(locator);
+        _providerDetails = Maps.transformValues(_providerProperties, new Function<Properties, OAuth2ProtectedResourceDetails>() {
+            @Override
+            public OAuth2ProtectedResourceDetails apply(final Properties properties) {
+                return buildProtectedResourceDetails(properties);
+            }
+        });
+        _enabledProviders = preferences.getEnabledProviders();
+        _defaultSiteUrl = preferences.getSiteUrl();
         _serializer = serializer;
 
-        INSTANCE = this;
+        LOGIN_DISPLAY = StringUtils.join(Iterables.filter(Lists.transform(_enabledProviders, new Function<String, String>() {
+            @Nullable
+            @Override
+            public String apply(final String providerId) {
+                return getProviderProperty(providerId, "link");
+            }
+        }), Predicates.<String>notNull()));
+        CREDENTIALS_BOX_STYLE = Iterables.any(Lists.transform(_enabledProviders, new Function<String, Boolean>() {
+            @Override
+            public Boolean apply(final String providerId) {
+                return Boolean.parseBoolean(getProviderProperty(providerId, "disableUsernamePasswordLogin", "false"));
+            }
+        }), Predicates.equalTo(false)) ? "" : "display:none";
     }
 
     @SuppressWarnings("unused")
-    public static String getLoginStr() {
-        return StringUtils.join(Lists.transform(INSTANCE.getEnabledProviders(), new Function<String, String>() {
-            @Nullable
-            @Override
-            public String apply(final String provider) {
-                return INSTANCE.getProperty(provider, "link");
-            }
-        }));
+    public static String getLoginDisplay() {
+        return LOGIN_DISPLAY;
     }
 
     @SuppressWarnings("unused")
     public static String getUsernamePasswordStyle() {
-        return Boolean.parseBoolean(INSTANCE.getProperty("disableUsernamePasswordLogin", "false")) ? "display:none" : "";
+        return CREDENTIALS_BOX_STYLE;
     }
 
     @Override
@@ -115,17 +126,15 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
     @Scope("prototype")
     @DependsOn("xnatOAuth2RestTemplate")
     public OpenIdConnectFilter openIdConnectFilter() {
-        log.error("Now creating openIdConnectFilter");
+        log.info("Now creating openIdConnectFilter");
         return new OpenIdConnectFilter(this, _oAuth2RestTemplate, _serializer);
     }
 
     @Bean
     @Scope(value = WebApplicationContext.SCOPE_SESSION, proxyMode = ScopedProxyMode.TARGET_CLASS)
     public OAuth2RestTemplate xnatOAuth2RestTemplate(final OAuth2ClientContext clientContext) {
-        log.debug("At create rest template...");
+        log.debug("Creating new REST template instance for request {}", clientContext.getAccessTokenRequest());
         final HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
-
-        // Interrogate request to get providerId (e.g. look at url if nothing else)
         final String providerId = request.getParameter("providerId");
         log.debug("Provider ID is: {}", providerId);
         request.getSession().setAttribute("providerId", providerId);
@@ -133,6 +142,7 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
         return _oAuth2RestTemplate = new OAuth2RestTemplate(getProtectedResourceDetails(providerId), clientContext);
     }
 
+    @Nonnull
     public List<String> getEnabledProviders() {
         return _enabledProviders;
     }
@@ -141,53 +151,49 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
         return _enabledProviders.contains(providerId);
     }
 
-    public String getProperty(final String property) {
-        return getProperty(property, null);
+    public String getDefaultSiteUrl() {
+        return _defaultSiteUrl;
     }
 
-    public String getProperty(final String property, final String defaultValue) {
-        return _properties.getProperty(property, defaultValue);
+    @Nullable
+    public String getProviderProperty(final String providerId, final String property) {
+        return getProviderProperty(providerId, property, null);
     }
 
-    private OAuth2ProtectedResourceDetails getProtectedResourceDetails(final String providerId) {
-        final String grantType = getProperty("grantType", "authorization_code");
+    @Nullable
+    public String getProviderProperty(final @Nonnull String providerId, final @Nonnull String property, final @Nullable String defaultValue) {
+        return _providerProperties.containsKey(providerId) ? _providerProperties.get(providerId).getProperty(property, defaultValue) : null;
+    }
 
-        final BaseOAuth2ProtectedResourceDetails details;
-        switch (grantType) {
-            case "implicit":
-                log.debug("Creating OAuth2ProtectedResourceDetails instance as ImplicitResourceDetails");
-                details = new ImplicitResourceDetails();
-                break;
+    @Nonnull
+    private OAuth2ProtectedResourceDetails getProtectedResourceDetails(final @Nonnull String providerId) {
+        if (!_providerDetails.containsKey(providerId)) {
+            throw new IllegalArgumentException("There is no provider definition for the ID '" + providerId + "'");
+        }
+        return _providerDetails.get(providerId);
+    }
 
-            case "client_credentials":
-                log.debug("Creating OAuth2ProtectedResourceDetails instance as ClientCredentialsResourceDetails");
-                details = new ClientCredentialsResourceDetails();
-                break;
-
-            case "authorization_code":
-                log.debug("Creating OAuth2ProtectedResourceDetails instance as AuthorizationCodeResourceDetails");
-                details = new AuthorizationCodeResourceDetails();
-                break;
-
-            case "password":
-                log.debug("Creating OAuth2ProtectedResourceDetails instance as ResourceOwnerPasswordResourceDetails");
-                details = new ResourceOwnerPasswordResourceDetails();
-                break;
-
-            default:
-                throw new RuntimeException("Unknown grant type: " + grantType);
+    @Nonnull
+    private OAuth2ProtectedResourceDetails buildProtectedResourceDetails(final @Nonnull Properties properties) {
+        final Set<String> names = properties.stringPropertyNames();
+        if (!names.containsAll(REQUIRED_PROPERTIES)) {
+            throw new IllegalArgumentException("You must provide a value for the missing properties: " + StringUtils.join(Sets.difference(names, REQUIRED_PROPERTIES), ", "));
         }
 
-        final String   clientId          = getProperty("clientId");
-        final String   clientSecret      = getProperty("clientSecret");
-        final String   accessTokenUri    = getProperty("accessTokenUri");
-        final String   userAuthUri       = getProperty("userAuthUri");
-        final String   tokenName         = getProperty("tokenName");
-        final String   preEstablishedUri = getSiteUrl() + getProperty("preEstablishedRedirUri");
-        final String[] scopes            = getProperty("scopes").split(",");
+        final String grantType = properties.getProperty("grantType", "authorization_code");
+
+        final String   providerId        = properties.getProperty(ProviderAttributes.PROVIDER_ID);
+        final String   clientId          = properties.getProperty("clientId");
+        final String   clientSecret      = properties.getProperty("clientSecret");
+        final String   accessTokenUri    = properties.getProperty("accessTokenUri");
+        final String   userAuthUri       = properties.getProperty("userAuthUri");
+        final String   tokenName         = properties.getProperty("tokenName");
+        final String   preEstablishedUri = _defaultSiteUrl + OpenIdConnectFilter.PREESTABLISHED_REDIR_URI;
+        final String[] scopes            = properties.getProperty("scopes").split(",");
 
         log.debug("Creating protected resource details of provider: {}\nid: {}\nclientId: {}\nclientSecret: {}\naccessTokenUri: {}\nuserAuthUri: {}\ntokenName: {}\npreEstablishedUri: {}\nscopes: {}", providerId, clientId, clientSecret, accessTokenUri, userAuthUri, tokenName, preEstablishedUri, scopes);
 
+        final BaseOAuth2ProtectedResourceDetails details = getResourceDetailsByGrantType(providerId, grantType);
         details.setId(providerId);
         details.setClientId(clientId);
         details.setClientSecret(clientSecret);
@@ -202,48 +208,62 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
             redirect.setUseCurrentUri(false);
         } else if (details instanceof ResourceOwnerPasswordResourceDetails) {
             final ResourceOwnerPasswordResourceDetails password = (ResourceOwnerPasswordResourceDetails) details;
-            password.setUsername(getProperty("username"));
-            password.setPassword(getProperty("password"));
+            password.setUsername(properties.getProperty("username"));
+            password.setPassword(properties.getProperty("password"));
         }
+
         return details;
     }
 
-    private Properties loadProviderProperties(final AuthenticationProviderConfigurationLocator locator) {
+    @Nonnull
+    private static BaseOAuth2ProtectedResourceDetails getResourceDetailsByGrantType(final @Nonnull String providerId, final @Nonnull String grantType) {
+        switch (grantType) {
+            case "implicit":
+                log.debug("Creating OAuth2ProtectedResourceDetails instance as ImplicitResourceDetails for provider ID {}", providerId);
+                return new ImplicitResourceDetails();
+
+            case "client_credentials":
+                log.debug("Creating OAuth2ProtectedResourceDetails instance as ClientCredentialsResourceDetails for provider ID {}", providerId);
+                return new ClientCredentialsResourceDetails();
+
+            case "authorization_code":
+                log.debug("Creating OAuth2ProtectedResourceDetails instance as AuthorizationCodeResourceDetails for provider ID {}", providerId);
+                return new AuthorizationCodeResourceDetails();
+
+            case "password":
+                log.debug("Creating OAuth2ProtectedResourceDetails instance as ResourceOwnerPasswordResourceDetails for provider ID {}", providerId);
+                return new ResourceOwnerPasswordResourceDetails();
+
+            default:
+                throw new RuntimeException("Unknown grant type '" + grantType + "' for provider ID '" + providerId + "'");
+        }
+    }
+
+    private Map<String, Properties> loadProviderProperties(final AuthenticationProviderConfigurationLocator locator) {
         final Map<String, ProviderAttributes> openIdProviders = locator.getProviderDefinitionsByAuthMethod("openid");
         if (openIdProviders.isEmpty()) {
             throw new RuntimeException("You must configure an OpenID provider");
         }
-        if (openIdProviders.size() > 1) {
-            throw new RuntimeException("This plugin currently only supports one OpenID provider at a time, but I found " + openIdProviders.size() + " providers defined: " + StringUtils.join(openIdProviders.keySet(), ", "));
-        }
-        final ProviderAttributes providerDefinition = locator.getProviderDefinition(openIdProviders.keySet().iterator().next());
-        assert providerDefinition != null;
-        return providerDefinition.getProperties();
+        log.info("Found {} OpenID provider definitions: {}", openIdProviders.size(), StringUtils.join(openIdProviders.keySet(), ", "));
+        return Maps.transformValues(openIdProviders, new Function<ProviderAttributes, Properties>() {
+            @Override
+            public Properties apply(final ProviderAttributes attributes) {
+                return attributes.getProperties();
+            }
+        });
     }
 
-    private String getSiteUrl() {
-        return _siteUrl;
-    }
+    private static final String      PROVIDER_ID         = "openid";
+    private static final Set<String> REQUIRED_PROPERTIES = ImmutableSet.copyOf(Arrays.asList(ProviderAttributes.PROVIDER_ID, ProviderAttributes.PROVIDER_AUTH_METHOD, ProviderAttributes.PROVIDER_NAME));
 
-    private String getSiteUrl(final SiteConfigPreferences preferences) {
-        final String siteUrl = getProperty("siteUrl");
-        if (StringUtils.isNotBlank(siteUrl)) {
-            log.debug("Found site URL in provider properties, using this as override value: {}", siteUrl);
-            return siteUrl;
-        }
-        final String defaultSiteUrl = preferences.getSiteUrl();
-        log.debug("Didn't find site URL in provider properties, using site configuration value: {}", defaultSiteUrl);
-        return defaultSiteUrl;
-    }
+    private static String LOGIN_DISPLAY;
+    private static String CREDENTIALS_BOX_STYLE;
 
-    private static final String PROVIDER_ID = "openid";
+    private final Map<String, Properties>                     _providerProperties;
+    private final Map<String, OAuth2ProtectedResourceDetails> _providerDetails;
+    private final List<String>                                _enabledProviders;
+    private final String                                      _defaultSiteUrl;
+    private final SerializerService                           _serializer;
 
-    private static OpenIdAuthPlugin INSTANCE;
-
-    private final Properties         _properties;
-    private final List<String>       _enabledProviders;
-    private final String             _siteUrl;
-    private final SerializerService _serializer;
-
-    private       OAuth2RestTemplate _oAuth2RestTemplate;
+    private OAuth2RestTemplate _oAuth2RestTemplate;
 }

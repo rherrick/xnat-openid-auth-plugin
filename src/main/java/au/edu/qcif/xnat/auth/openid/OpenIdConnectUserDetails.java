@@ -38,16 +38,16 @@ import org.springframework.security.oauth2.common.OAuth2AccessToken;
 public class OpenIdConnectUserDetails extends XDATUser {
 	public OpenIdConnectUserDetails(final String providerId, final OpenIdAuthPlugin plugin, Map<String, String> userInfo, final OAuth2AccessToken accessToken) {
 		setUsername(providerId + "_" + userInfo.get("sub"));
-		setFirstname(getUserInfo(plugin, userInfo, "givenNameProperty"));
-		setLastname(getUserInfo(plugin, userInfo, "familyNameProperty"));
+		setFirstname(getUserInfo(plugin, providerId, userInfo, "givenNameProperty"));
+		setLastname(getUserInfo(plugin, providerId, userInfo, "familyNameProperty"));
 		setName(userInfo.get("name"));
-		setEmail(getUserInfo(plugin, userInfo, "emailProperty"));
+		setEmail(getUserInfo(plugin, providerId, userInfo, "emailProperty"));
 		setPicture(userInfo.get("picture"));
 		setAccessToken(accessToken);
 	}
 
-	private static String getUserInfo(final OpenIdAuthPlugin plugin, final Map<String, String> userInfo, final String property) {
-		return StringUtils.defaultIfBlank(userInfo.get(plugin.getProperty(property)), "");
+	private static String getUserInfo(final OpenIdAuthPlugin plugin, final String providerId, final Map<String, String> userInfo, final String property) {
+		return StringUtils.defaultIfBlank(userInfo.get(plugin.getProviderProperty(providerId, property, "")), "");
 	}
 
 	private String            _username;

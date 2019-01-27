@@ -9,7 +9,7 @@
 #* @vtlvariable name="data" type="org.apache.turbine.util.RunData" *#
 #* @vtlvariable name="link" type="org.apache.turbine.services.pull.tools.TemplateLink" *#
 <!-- OPENID BEGIN -->
-#set($pluginClassMethod = $siteConfig.getClass().forName("au.edu.qcif.xnat.auth.openid.OpenIdAuthPlugin").getMethod("getLoginStr"))
+#set($pluginClassMethod = $siteConfig.getClass().forName("au.edu.qcif.xnat.auth.openid.OpenIdAuthPlugin").getMethod("getLoginDisplay"))
 #set($pluginClassMethodDisableUsernamePassword = $siteConfig.getClass().forName("au.edu.qcif.xnat.auth.openid.OpenIdAuthPlugin").getMethod("getUsernamePasswordStyle"))
 #set($loginStr = $pluginClassMethod.invoke(null))
 #set($usernamePasswordStyleStr = $pluginClassMethodDisableUsernamePassword.invoke(null))

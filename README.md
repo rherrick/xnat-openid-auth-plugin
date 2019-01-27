@@ -98,12 +98,6 @@ The following properties control the plugin:
 ### enabled
 Comma delimited list of provide ids, currently tested with Google `google` and AAF `aaf`.
 
-### siteUrl
-The main domain, needed to build the full `preEstablishedRedirUri`
-
-### preEstablishedRedirUri
-The return leg of OpenID request after the provider has authenticated, defaults to `<siteUrl>/openid-login`
-
 ### openid.`providerId`.clientId
 The ID obtained on app registration
 
