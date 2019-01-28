@@ -19,9 +19,13 @@ package au.edu.qcif.xnat.auth.openid;
 
 import com.google.common.base.Function;
 import com.google.common.base.Predicates;
-import com.google.common.collect.*;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.text.StringSubstitutor;
 import org.nrg.framework.annotations.XnatPlugin;
 import org.nrg.framework.services.SerializerService;
 import org.nrg.xdat.preferences.SiteConfigPreferences;
@@ -30,7 +34,6 @@ import org.nrg.xnat.security.provider.AuthenticationProviderConfigurationLocator
 import org.nrg.xnat.security.provider.ProviderAttributes;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Scope;
 import org.springframework.context.annotation.ScopedProxyMode;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
@@ -71,6 +74,9 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
 
     @Autowired
     public OpenIdAuthPlugin(final AuthenticationProviderConfigurationLocator locator, final SiteConfigPreferences preferences, final SerializerService serializer) {
+        _openIdUri = preferences.getSiteUrl() + OPENID_LOGIN_HANDLER;
+        _serializer = serializer;
+
         _providerProperties = loadProviderProperties(locator);
         _providerDetails = Maps.transformValues(_providerProperties, new Function<Properties, OAuth2ProtectedResourceDetails>() {
             @Override
@@ -79,15 +85,15 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
             }
         });
         _enabledOpenIdProviders = new ArrayList<>(Sets.intersection(_providerProperties.keySet(), new HashSet<>(preferences.getEnabledProviders())));
-        _openIdUri = preferences.getSiteUrl() + OPENID_LOGIN_HANDLER;
-        _serializer = serializer;
-        _oauth2RestTemplates = new HashMap<>();
 
         LOGIN_DISPLAY = _enabledOpenIdProviders.isEmpty() ? "" : StringUtils.join(Iterables.filter(Lists.transform(_enabledOpenIdProviders, new Function<String, String>() {
             @Nullable
             @Override
             public String apply(final String providerId) {
-                return getProviderProperty(providerId, "link");
+                final String link = getProviderProperty(providerId, "link");
+                final Map<String, String> variables = new HashMap<>();
+                variables.put("providerId", providerId);
+                return StringSubstitutor.replace(link, variables);
             }
         }), Predicates.<String>notNull()), "\n");
         CREDENTIALS_BOX_STYLE = _enabledOpenIdProviders.isEmpty() ? "" : Iterables.any(Lists.transform(_enabledOpenIdProviders, new Function<String, Boolean>() {
@@ -127,7 +133,6 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
 
     @Bean
     @Scope("prototype")
-    @DependsOn("xnatOAuth2RestTemplate")
     public OpenIdConnectFilter openIdConnectFilter() {
         log.info("Now creating openIdConnectFilter");
         return new OpenIdConnectFilter(this, _serializer);
@@ -135,32 +140,19 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
 
     @Bean
     @Scope(value = WebApplicationContext.SCOPE_SESSION, proxyMode = ScopedProxyMode.TARGET_CLASS)
-    public OAuth2RestTemplate xnatOAuth2RestTemplate(final OAuth2ClientContext clientContext) {
+    public OAuth2RestTemplate oAuth2RestTemplate(final OAuth2ClientContext clientContext) {
         log.debug("Creating new REST template instance for request {}", clientContext.getAccessTokenRequest());
         final HttpServletRequest request    = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
         final String             providerId = request.getParameter("providerId");
 
         log.debug("Provider ID is: {}", providerId);
         request.getSession().setAttribute("providerId", providerId);
-
-        if (!_oauth2RestTemplates.containsKey(providerId)) {
-            log.debug("No cached OAuth2 REST template for provider {}, creating", providerId);
-            final OAuth2RestTemplate oAuth2RestTemplate = new OAuth2RestTemplate(getProtectedResourceDetails(providerId), clientContext);
-            _oauth2RestTemplates.put(providerId, oAuth2RestTemplate);
-        } else {
-            log.debug("Found cached OAuth2 REST template for provider {}, returning", providerId);
-        }
-
-        return _oauth2RestTemplates.get(providerId);
+        return new OAuth2RestTemplate(getProtectedResourceDetails(providerId), clientContext);
     }
 
     @Nonnull
     public List<String> getEnabledOpenIdProviders() {
         return _enabledOpenIdProviders;
-    }
-
-    public OAuth2RestTemplate getOAuth2RestTemplateForProvider(final String providerId) {
-        return _oauth2RestTemplates.get(providerId);
     }
 
     public boolean isEnabled(final String providerId) {
@@ -191,11 +183,6 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
 
     @Nonnull
     private OAuth2ProtectedResourceDetails buildProtectedResourceDetails(final @Nonnull Properties properties) {
-        final Set<String> names = properties.stringPropertyNames();
-        if (!names.containsAll(REQUIRED_PROPERTIES)) {
-            throw new IllegalArgumentException("You must provide a value for the missing properties: " + StringUtils.join(Sets.difference(names, REQUIRED_PROPERTIES), ", "));
-        }
-
         final String grantType = properties.getProperty("grantType", "authorization_code");
 
         final String   providerId        = properties.getProperty(ProviderAttributes.PROVIDER_ID);
@@ -264,20 +251,21 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
         return Maps.transformValues(openIdProviders, new Function<ProviderAttributes, Properties>() {
             @Override
             public Properties apply(final ProviderAttributes attributes) {
-                return attributes.getProperties();
+                final Properties properties = attributes.getProperties();
+                properties.setProperty(ProviderAttributes.PROVIDER_ID, attributes.getProviderId());
+                properties.setProperty(ProviderAttributes.PROVIDER_NAME, attributes.getName());
+                return properties;
             }
         });
     }
 
     private static final String      PROVIDER_ID         = "openid";
-    private static final Set<String> REQUIRED_PROPERTIES = ImmutableSet.copyOf(Arrays.asList(ProviderAttributes.PROVIDER_ID, ProviderAttributes.PROVIDER_AUTH_METHOD, ProviderAttributes.PROVIDER_NAME));
 
     private static String LOGIN_DISPLAY;
     private static String CREDENTIALS_BOX_STYLE;
 
     private final Map<String, Properties>                     _providerProperties;
     private final Map<String, OAuth2ProtectedResourceDetails> _providerDetails;
-    private final Map<String, OAuth2RestTemplate>             _oauth2RestTemplates;
     private final List<String>                                _enabledOpenIdProviders;
     private final String                                      _openIdUri;
     private final SerializerService                           _serializer;
