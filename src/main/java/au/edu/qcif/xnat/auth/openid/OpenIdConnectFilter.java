@@ -29,6 +29,8 @@ import org.nrg.xft.event.EventDetails;
 import org.nrg.xft.event.EventUtils;
 import org.nrg.xft.security.UserI;
 import org.nrg.xnat.security.exceptions.NewAutoAccountNotAutoEnabledException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
@@ -36,6 +38,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.jwt.Jwt;
 import org.springframework.security.jwt.JwtHelper;
 import org.springframework.security.oauth2.client.OAuth2RestTemplate;
+import org.springframework.security.oauth2.client.resource.UserRedirectRequiredException;
 import org.springframework.security.oauth2.common.OAuth2AccessToken;
 import org.springframework.security.oauth2.common.exceptions.InvalidTokenException;
 import org.springframework.security.oauth2.common.exceptions.OAuth2Exception;
@@ -44,10 +47,7 @@ import org.springframework.security.web.authentication.AbstractAuthenticationPro
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static org.nrg.xnat.security.provider.ProviderAttributes.PROVIDER_AUTO_ENABLED;
 import static org.nrg.xnat.security.provider.ProviderAttributes.PROVIDER_AUTO_VERIFIED;
@@ -59,38 +59,53 @@ import static org.nrg.xnat.security.provider.ProviderAttributes.PROVIDER_AUTO_VE
  */
 @Slf4j
 public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter {
-    public static final String PREESTABLISHED_REDIR_URI = "/openid-login";
-
-    public OpenIdConnectFilter(final OpenIdAuthPlugin plugin, final OAuth2RestTemplate oAuth2RestTemplate, final SerializerService serializer) {
-        super(plugin.getDefaultSiteUrl() + PREESTABLISHED_REDIR_URI);
-        log.debug("Created filter for URI {}", plugin.getDefaultSiteUrl() + PREESTABLISHED_REDIR_URI);
+    public OpenIdConnectFilter(final OpenIdAuthPlugin plugin, final SerializerService serializer) {
+        super(OpenIdAuthPlugin.OPENID_LOGIN_HANDLER);
+        log.debug("Created filter for URI {}", plugin.getOpenIdUri());
         setAuthenticationManager(new NoopAuthenticationManager());
 
         _plugin = plugin;
-        _oAuth2RestTemplate = oAuth2RestTemplate;
         _serializer = serializer;
+        _oauth2RestTemplates = new HashMap<>();
 
         final ImmutableMultimap.Builder<String, String> builder = ImmutableMultimap.builder();
-        for (final String providerId : _plugin.getEnabledProviders()) {
+        for (final String providerId : _plugin.getEnabledOpenIdProviders()) {
             builder.putAll(providerId, getAllowedEmailDomain(providerId));
         }
         _allowedEmailDomainsByProviderId = builder.build();
     }
 
+    @Autowired
+    @Qualifier("xnatOAuth2RestTemplate")
+    public void setOAuth2RestTemplate(final OAuth2RestTemplate restTemplate) {
+        final String providerId = restTemplate.getResource().getId();
+        if (_oauth2RestTemplates.containsKey(providerId)) {
+            log.debug("Setting OAuth2 REST template for provider {}, but that already exists", providerId);
+        } else {
+            log.debug("Storing OAuth2 REST template for provider {}", providerId);
+            _oauth2RestTemplates.put(providerId, restTemplate);
+        }
+    }
+
     @Override
     public Authentication attemptAuthentication(final HttpServletRequest request, final HttpServletResponse response) throws AuthenticationException, IOException {
-        log.debug("Executed attemptAuthentication...");
+        final String             providerId         = (String) request.getSession().getAttribute("providerId");
+        final OAuth2RestTemplate oAuth2RestTemplate = _plugin.getOAuth2RestTemplateForProvider(providerId);
+
+        log.debug("Executing attemptAuthentication() for provider ID {}", providerId);
         final OAuth2AccessToken accessToken;
         try {
             log.debug("Getting access token...");
-            accessToken = _oAuth2RestTemplate.getAccessToken();
+            accessToken = oAuth2RestTemplate.getAccessToken();
             log.debug("Got access token!!! {}", accessToken);
         } catch (final OAuth2Exception e) {
-            log.error("Could not obtain access token", e);
-            throw new BadCredentialsException("Could not obtain access token", e);
+            log.error("Encountered an exception trying to get access token", e);
+            throw e;
+        } catch (final UserRedirectRequiredException e) {
+            log.debug("User redirect required to allow user login on OAuth server for provider {}", providerId);
+            throw e;
         }
 
-        final String providerId = (String) request.getSession().getAttribute("providerId");
         try {
             log.debug("Getting idToken...");
             final String idToken      = accessToken.getAdditionalInformation().get("id_token").toString();
@@ -134,7 +149,7 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
                 xdatUser.setVerified(userAutoVerified);
 
                 if (Boolean.parseBoolean(_plugin.getProviderProperty(providerId, "forceUserCreate", "false"))) {
-                    final EventDetails event = new EventDetails(EventUtils.CATEGORY.PROJECT_ACCESS, EventUtils.TYPE.PROCESS,"added new user", "new user logged in", "OpenID connect new user");
+                    final EventDetails event = new EventDetails(EventUtils.CATEGORY.PROJECT_ACCESS, EventUtils.TYPE.PROCESS, "added new user", "new user logged in", "OpenID connect new user");
                     try {
                         Users.save(xdatUser, Users.getAdminUser(), true, event);
                         log.debug("User created, username: {}, ID: {}", xdatUser.getUsername(), xdatUser.getID());
@@ -175,6 +190,5 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
     private final OpenIdAuthPlugin                  _plugin;
     private final SerializerService                 _serializer;
     private final ImmutableMultimap<String, String> _allowedEmailDomainsByProviderId;
-
-    private OAuth2RestTemplate _oAuth2RestTemplate;
+    private final Map<String, OAuth2RestTemplate>   _oauth2RestTemplates;
 }
