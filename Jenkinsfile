@@ -7,5 +7,11 @@ pipeline {
             }
         }
     }
+    post {
+        always {
+            archiveArtifacts artifacts: 'build/libs/*.jar', excludes: '*-beans-*.jar', fingerprint: true
+        }
+    }
+
 }
 
