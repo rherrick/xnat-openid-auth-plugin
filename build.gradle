@@ -5,8 +5,7 @@
 
 buildscript {
     ext {
-        vXnat = "1.7.5.1"
-        vXnatPlugin = "1.7.5"
+        vXnat = "1.7.6-SNAPSHOT"
     }
     repositories {
         mavenLocal()
@@ -24,9 +23,9 @@ buildscript {
         }
     }
     dependencies {
-        classpath "org.nrg.xnat.build:xnat-data-builder:${vXnatPlugin}"
-        classpath "io.spring.gradle:dependency-management-plugin:1.0.6.RELEASE"
-        classpath "io.franzbecker:gradle-lombok:1.14"
+        classpath "org.nrg.xnat.build:xnat-data-builder:${vXnat}"
+        classpath "io.spring.gradle:dependency-management-plugin:1.0.7.RELEASE"
+        classpath "io.franzbecker:gradle-lombok:2.1"
         classpath "gradle.plugin.com.palantir.gradle.gitversion:gradle-git-version:0.12.0-rc2"
     }
 }
@@ -74,27 +73,7 @@ dependencyManagement.imports {
 }
 
 dependencies {
-    annotationProcessor "org.nrg:framework"
-
     compileOnly "org.nrg.xnat:web"
-    compileOnly "org.nrg.xnat:xnat-data-models"
-    compileOnly "org.nrg.xdat:core"
-    compileOnly "org.nrg:prefs"
-    compileOnly "org.nrg:framework"
-    compileOnly "org.springframework:spring-web"
-    compileOnly "org.springframework.security:spring-security-config"
-    compileOnly "org.springframework.security:spring-security-ldap"
-    compileOnly "org.springframework.security:spring-security-web"
-    compileOnly "org.springframework.security.oauth:spring-security-oauth2:2.2.1.RELEASE"
-    compileOnly "org.springframework.security:spring-security-jwt:1.0.8.RELEASE"
-    compileOnly "org.apache.commons:commons-lang3"
-    compileOnly "org.hibernate.javax.persistence:hibernate-jpa-2.1-api"
-    compileOnly "com.google.guava:guava"
-    compileOnly "org.projectlombok:lombok"
-    compileOnly "org.slf4j:slf4j-api"
-    compileOnly "log4j:log4j"
-    compileOnly "javax.servlet:javax.servlet-api"
-    compileOnly "org.apache.ivy:ivy:2.4.0"
 
     testImplementation "junit:junit"
     testImplementation "org.springframework:spring-test"

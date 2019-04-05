@@ -20,6 +20,7 @@ package au.edu.qcif.xnat.auth.openid;
 import au.edu.qcif.xnat.auth.openid.tokens.OpenIdAuthToken;
 import com.google.common.collect.ImmutableMultimap;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.nrg.framework.services.SerializerService;
 import org.nrg.xdat.security.helpers.Users;
@@ -44,6 +45,7 @@ import org.springframework.security.oauth2.common.exceptions.InvalidTokenExcepti
 import org.springframework.security.oauth2.common.exceptions.OAuth2Exception;
 import org.springframework.security.web.authentication.AbstractAuthenticationProcessingFilter;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.stereotype.Component;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -61,6 +63,7 @@ import static org.nrg.xnat.security.provider.ProviderAttributes.PROVIDER_AUTO_VE
  *
  * @author <a href='https://github.com/shilob'>Shilo Banihit</a>
  */
+@Component
 @Slf4j
 public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter {
     public OpenIdConnectFilter(final OpenIdAuthPlugin plugin, final SerializerService serializer) {
@@ -178,7 +181,7 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
     }
 
     private boolean isAllowedEmailDomain(final String providerId, final String email) {
-        return !_allowedEmailDomainsByProviderId.containsKey(providerId) || _allowedEmailDomainsByProviderId.get(providerId).contains(StringUtils.removeAll(email, "^.*@").toLowerCase());
+        return !_allowedEmailDomainsByProviderId.containsKey(providerId) || _allowedEmailDomainsByProviderId.get(providerId).contains(RegExUtils.removeAll(email, "^.*@").toLowerCase());
     }
 
     private List<String> getAllowedEmailDomain(final String providerId) {

@@ -20,6 +20,7 @@ package au.edu.qcif.xnat.auth.openid;
 import java.util.Map;
 
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import org.apache.commons.lang3.StringUtils;
@@ -34,6 +35,7 @@ import org.springframework.security.oauth2.common.OAuth2AccessToken;
  */
 @Getter
 @Setter
+@NoArgsConstructor
 @Accessors(prefix = "_")
 public class OpenIdConnectUserDetails extends XDATUser {
 	public OpenIdConnectUserDetails(final String providerId, final OpenIdAuthPlugin plugin, Map<String, String> userInfo, final OAuth2AccessToken accessToken) {

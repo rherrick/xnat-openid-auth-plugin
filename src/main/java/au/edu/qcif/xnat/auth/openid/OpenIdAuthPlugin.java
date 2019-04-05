@@ -90,7 +90,7 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
             @Nullable
             @Override
             public String apply(final String providerId) {
-                final String link = getProviderProperty(providerId, "link");
+                final String              link      = getProviderProperty(providerId, "link");
                 final Map<String, String> variables = new HashMap<>();
                 variables.put("providerId", providerId);
                 return StringSubstitutor.replace(link, variables);
@@ -194,7 +194,7 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
         final String   preEstablishedUri = getOpenIdUri();
         final String[] scopes            = properties.getProperty("scopes").split(",");
 
-        log.debug("Creating protected resource details of provider: {}\nid: {}\nclientId: {}\nclientSecret: {}\naccessTokenUri: {}\nuserAuthUri: {}\ntokenName: {}\npreEstablishedUri: {}\nscopes: {}", providerId, clientId, clientSecret, accessTokenUri, userAuthUri, tokenName, preEstablishedUri, scopes);
+        log.debug("Creating protected resource details of provider ID: {}\nclientId: {}\nclientSecret: {}\naccessTokenUri: {}\nuserAuthUri: {}\ntokenName: {}\npreEstablishedUri: {}\nscopes: {}", providerId, clientId, clientSecret, accessTokenUri, userAuthUri, tokenName, preEstablishedUri, scopes);
 
         final BaseOAuth2ProtectedResourceDetails details = getResourceDetailsByGrantType(providerId, grantType);
         details.setId(providerId);
@@ -259,7 +259,7 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
         });
     }
 
-    private static final String      PROVIDER_ID         = "openid";
+    private static final String PROVIDER_ID = "openid";
 
     private static String LOGIN_DISPLAY;
     private static String CREDENTIALS_BOX_STYLE;
