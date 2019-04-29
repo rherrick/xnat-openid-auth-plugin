@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    openid-auth-plugin: openid-auth-logback.xml
+
+    OpenId plugin logback configuration
+-->
+<configuration scan="true" scanPeriod="30 seconds">
+    <appender name="openid" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <append>true</append>
+        <file>${xnat.home}/logs/openid.log</file>
+        <encoder>
+            <pattern>%d [%t] %-5p %c - %m%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${xnat.home}/logs/openid.log.%d{yyyy-MM-dd}</fileNamePattern>
+        </rollingPolicy>
+    </appender>
+    <logger name="au.edu.qcif.xnat.auth.openid" additivity="false" level="WARN">
+        <appender-ref ref="openid"/>
+    </logger>
+</configuration>

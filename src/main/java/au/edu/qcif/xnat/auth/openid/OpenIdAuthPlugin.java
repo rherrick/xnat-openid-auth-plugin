@@ -65,7 +65,7 @@ import java.util.*;
  *
  * @author <a href='https://github.com/shilob'>Shilo Banihit</a>
  */
-@XnatPlugin(value = "xnat-openid-auth-plugin", name = "XNAT OpenID Authentication Provider Plugin")
+@XnatPlugin(value = "xnat-openid-auth-plugin", name = "XNAT OpenID Authentication Provider Plugin", logConfigurationFile = "openid-auth-logback.xml")
 @EnableOAuth2Client
 @Component
 @Slf4j
