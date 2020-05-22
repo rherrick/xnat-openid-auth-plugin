@@ -135,7 +135,7 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
 			if(auth!=null){
 				xdatUsername = auth.getXdatUsername();
 			}else{
-				xdatUsername = buildUsername(user,providerId);
+				xdatUsername = buildUsername(user,providerId, userAuthService);
 			}
 
 			log.debug("Checking if user exists...");
@@ -173,10 +173,18 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
 
 	}
 
-	private String buildUsername(final OpenIdConnectUserDetails user, final String providerId){
-		String email= user.getEmail();
-		String preamble= email.split("@")[0];
-		return preamble.replaceAll("[^a-zA-Z0-9\\.]", ".") + "-" + providerId+"-1";
+	private String buildUsername(final OpenIdConnectUserDetails user, final String providerId, final XdatUserAuthService userAuthService){
+		final String email= user.getEmail();
+		final String preamble= email.split("@")[0];
+		final String sanitizedPreamble = preamble.replaceAll("[^a-zA-Z0-9\\.]", ".") + "-" + providerId;
+
+		int counter=1;
+		String proposedName=sanitizedPreamble + "-" + providerId + "-" + counter;
+		while(userAuthService.hasUserByNameAndAuth(proposedName,"openid",providerId)){
+			proposedName=sanitizedPreamble + "-" + providerId + "-" + (counter++);
+		}
+
+		return proposedName;
 	}
 
 	private Authentication createUserAccount(String providerId, OpenIdConnectUserDetails user, String xdatUsername) throws AuthenticationException {
