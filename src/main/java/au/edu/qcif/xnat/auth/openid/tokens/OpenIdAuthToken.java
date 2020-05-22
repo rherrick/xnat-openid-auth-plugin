@@ -19,7 +19,11 @@ package au.edu.qcif.xnat.auth.openid.tokens;
 
 import org.nrg.xft.security.UserI;
 import org.nrg.xnat.security.tokens.AbstractXnatAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+
 import org.springframework.security.core.SpringSecurityCoreVersion;
+
+import java.util.Collection;
 
 /**
  * Plugin's XNAT Auth token
@@ -33,6 +37,10 @@ public class OpenIdAuthToken extends AbstractXnatAuthenticationToken {
 
 	public OpenIdAuthToken(final UserI details, final String providerId) {
 		super(providerId, details, null, details.getAuthorities());
+	}
+
+	public OpenIdAuthToken(final UserI details, final String providerId, final Collection<? extends GrantedAuthority> authorities){
+		super(providerId, details, null, authorities);
 	}
 
 	public String toString() {

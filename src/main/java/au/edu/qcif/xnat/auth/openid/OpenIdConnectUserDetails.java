@@ -52,8 +52,7 @@ public class OpenIdConnectUserDetails extends XDATUser {
 	private String providerId;
 	private OpenIdAuthPlugin plugin;
 
-	public OpenIdConnectUserDetails(String providerId, Map<String, String> userInfo, OAuth2AccessToken token,
-			OpenIdAuthPlugin plugin) {
+	public OpenIdConnectUserDetails(String providerId, Map<String, String> userInfo, OAuth2AccessToken token, OpenIdAuthPlugin plugin) {
 		this.openIdUserInfo = userInfo;
 		this.providerId = providerId;
 		this.setUsername(providerId + "_" + userInfo.get("sub"));

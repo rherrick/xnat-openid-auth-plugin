@@ -58,6 +58,7 @@ import java.util.Properties;
 @Component
 @Slf4j
 public class OpenIdAuthPlugin implements XnatSecurityExtension {
+	private boolean skipOpenID=false;
 
 	@Autowired
 	public void setAuthenticationProviderConfigurationLocator(
@@ -82,16 +83,23 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
 	}
 
 	private void loadProps() {
-		if (_props == null && _locator != null) {
+		
+		if (_props == null && _locator != null && !skipOpenID) {
+
 			final Map<String, ProviderAttributes> openIdProviders = _locator.getProviderDefinitionsByAuthMethod("openid");
 			if (openIdProviders.size() == 0) {
-				throw new RuntimeException("You must configure an OpenID provider");
+				skipOpenID=true;
+				log.error("",new RuntimeException("You must configure an OpenID provider"));
+				return;
 			}
+
 			if (openIdProviders.size() > 1) {
-				throw new RuntimeException(
+				skipOpenID=true;
+				log.error("",new RuntimeException(
 						"This plugin currently only supports one OpenID provider at a time, but I found "
 								+ openIdProviders.size() + " providers defined: "
-								+ StringUtils.join(openIdProviders.keySet(), ", "));
+								+ StringUtils.join(openIdProviders.keySet(), ", ")));
+				return;
 			}
             final ProviderAttributes providerDefinition = _locator.getProviderDefinition(openIdProviders.keySet().iterator().next());
             _props = providerDefinition != null ? providerDefinition.getProperties() : new Properties();
@@ -113,14 +121,22 @@ public class OpenIdAuthPlugin implements XnatSecurityExtension {
 	@Bean
 	@Scope("prototype")
 	public OpenIdConnectFilter createFilter() {
-        return new OpenIdConnectFilter(getProps().getProperty("preEstablishedRedirUri"), this);
+		return new OpenIdConnectFilter(getProps().getProperty("preEstablishedRedirUri"), this);
 	}
 
 	public void configure(final HttpSecurity http) throws Exception {
 		this.http = http;
-		http.addFilterAfter(new OAuth2ClientContextFilter(), AbstractPreAuthenticatedProcessingFilter.class)
-            .addFilterAfter(createFilter(), OAuth2ClientContextFilter.class);
-
+		try {
+			if(!skipOpenID) {
+				http.addFilterAfter(new OAuth2ClientContextFilter(), AbstractPreAuthenticatedProcessingFilter.class)
+						.addFilterAfter(createFilter(), OAuth2ClientContextFilter.class);
+			}
+		}catch(Throwable e){
+			log.error("",e);
+			if(!skipOpenID){
+				throw e;
+			}
+		}
 	}
 
 	private AuthenticationProviderConfigurationLocator _locator;
