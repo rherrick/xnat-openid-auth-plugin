@@ -24,7 +24,6 @@ buildscript {
         }
     }
     dependencies {
-        classpath "org.nrg.xnat.build:xnat-data-builder:${vXnat}"
         classpath "io.spring.gradle:dependency-management-plugin:1.0.3.RELEASE"
         classpath "gradle.plugin.com.palantir.gradle.gitversion:gradle-git-version:0.8.0"
     }
@@ -42,7 +41,6 @@ apply plugin: 'maven-publish'
 apply plugin: 'jacoco'
 apply plugin: 'idea'
 apply plugin: 'eclipse'
-apply plugin: 'xnat-data-builder'
 apply plugin: 'com.palantir.git-version'
 
 repositories {
@@ -85,7 +83,7 @@ dependencyManagement.imports {
 dependencies {
     compileOnly "org.nrg.xnat:web:${vXnatDev}"
     compileOnly "org.nrg.xnat:xnat-data-models"
-    compileOnly "org.nrg.xdat:core:${vXnatDev}"
+    compileOnly "org.nrg.xdat:core:${vXnat}"
     compileOnly "org.nrg:prefs"
     compileOnly "org.nrg:framework"
     compileOnly "org.springframework:spring-web"
