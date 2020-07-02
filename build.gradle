@@ -5,8 +5,7 @@
 
 buildscript {
     ext {
-        vXnat = "1.7.7-ACTIVE-SNAPSHOT"
-	vXnatDev = "1.7.7.RAD-SNAPSHOT"
+        vXnat = "1.7.7-SNAPSHOT"
     }
     repositories {
         mavenLocal()
@@ -81,9 +80,9 @@ dependencyManagement.imports {
 }
 
 dependencies {
-    compileOnly "org.nrg.xnat:web:${vXnatDev}"
+    compileOnly "org.nrg.xnat:web"
     compileOnly "org.nrg.xnat:xnat-data-models"
-    compileOnly "org.nrg.xdat:core:${vXnat}"
+    compileOnly "org.nrg.xdat:core"
     compileOnly "org.nrg:prefs"
     compileOnly "org.nrg:framework"
     compileOnly "org.springframework:spring-web"
