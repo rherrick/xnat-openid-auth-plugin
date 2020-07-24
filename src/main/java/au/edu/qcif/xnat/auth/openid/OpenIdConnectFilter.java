@@ -17,33 +17,25 @@
  */
 package au.edu.qcif.xnat.auth.openid;
 
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import au.edu.qcif.xnat.auth.openid.tokens.OpenIdAuthToken;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.nrg.xdat.XDAT;
 import org.nrg.xdat.security.helpers.Roles;
+import org.nrg.xdat.security.helpers.UserHelper;
 import org.nrg.xdat.security.helpers.Users;
-import org.nrg.xdat.security.user.exceptions.UserFieldMappingException;
+import org.nrg.xdat.services.XdatUserAuthService;
+import org.nrg.xdat.entities.XdatUserAuth;
+import org.nrg.xdat.security.services.UserManagementServiceI;
 import org.nrg.xdat.security.user.exceptions.UserInitException;
 import org.nrg.xdat.security.user.exceptions.UserNotFoundException;
+import org.nrg.xdat.turbine.utils.AccessLogger;
 import org.nrg.xft.event.EventDetails;
 import org.nrg.xft.event.EventUtils;
 import org.nrg.xft.security.UserI;
-import org.nrg.xft.utils.ValidationUtils.ValidationResultsI;
 import org.nrg.xnat.security.exceptions.NewAutoAccountNotAutoEnabledException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.context.annotation.Scope;
-import org.springframework.context.annotation.ScopedProxyMode;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -51,22 +43,19 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.jwt.Jwt;
 import org.springframework.security.jwt.JwtHelper;
-import org.springframework.security.oauth2.client.OAuth2ClientContext;
-import org.springframework.security.oauth2.client.OAuth2RestOperations;
 import org.springframework.security.oauth2.client.OAuth2RestTemplate;
 import org.springframework.security.oauth2.common.OAuth2AccessToken;
 import org.springframework.security.oauth2.common.exceptions.InvalidTokenException;
 import org.springframework.security.oauth2.common.exceptions.OAuth2Exception;
+import org.springframework.security.oauth2.config.annotation.web.configuration.EnableOAuth2Client;
 import org.springframework.security.web.authentication.AbstractAuthenticationProcessingFilter;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
-import org.springframework.web.context.WebApplicationContext;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import au.edu.qcif.xnat.auth.openid.tokens.OpenIdAuthToken;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.oauth2.config.annotation.web.configuration.EnableOAuth2Client;
-import org.springframework.security.oauth2.client.token.grant.code.AuthorizationCodeResourceDetails;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.Map;
 
 /**
  * Main Spring Security authentication filter.
@@ -139,13 +128,36 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
 				throw (AuthenticationException) (new NewAutoAccountNotAutoEnabledException(
 						"OpenID user is not on the enabled list.", user));
 			}
+			log.debug("Map credentials to XDAT username...");
+			final XdatUserAuthService userAuthService = XDAT.getXdatUserAuthService();
+			final XdatUserAuth auth = userAuthService.getUserByNameAndAuth(user.getUsername(),"openid",providerId);
+			String xdatUsername;
+			if(auth!=null){
+				xdatUsername = auth.getXdatUsername();
+			}else{
+				xdatUsername = buildUsername(user,providerId, userAuthService);
+			}
+
 			log.debug("Checking if user exists...");
 			UserI xdatUser;
 			try {
-				xdatUser = Users.getUser(user.getUsername());
+				xdatUser = Users.getUser(xdatUsername);
+
 				if (xdatUser.isEnabled()) {
 					log.debug("User is enabled...");
-					return new OpenIdAuthToken(xdatUser, "openid");
+					final UsernamePasswordAuthenticationToken authToken=new OpenIdAuthToken(xdatUser, "openid",new java.util.ArrayList<>(Roles.isSiteAdmin(xdatUser) ? Users.AUTHORITIES_ADMIN : Users.AUTHORITIES_USER));
+
+					try {
+						Users.recordUserLogin(xdatUser, request);
+				 	} catch (Exception e1) {
+						log.error("", e1);
+					}
+
+					org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(authToken);
+					AccessLogger.LogServiceAccess(xdatUsername, request, "Authentication", "SUCCESS");
+					UserHelper.setUserHelper(request, user);
+										
+					return authToken;
 				} else {
 					throw (AuthenticationException) (new NewAutoAccountNotAutoEnabledException(
 							"New OpenID user, needs to to be enabled.", xdatUser));
@@ -153,40 +165,62 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
 			} catch (UserInitException e1) {
 				throw new BadCredentialsException("Cannot init OpenID User from DB.", e1);
 			} catch (UserNotFoundException e0) {
-				String userAutoEnabled = plugin.getProperty(providerId, "userAutoEnabled");
-				String userAutoVerified = plugin.getProperty(providerId, "userAutoVerified");
-
-				xdatUser = Users.createUser();
-				xdatUser.setEmail(user.getEmail());
-				xdatUser.setLogin(user.getUsername());
-				xdatUser.setFirstname(user.getFirstname());
-				xdatUser.setLastname(user.getLastname());
-				xdatUser.setEnabled(userAutoEnabled);
-				xdatUser.setVerified(userAutoVerified);
-
-				if (Boolean.parseBoolean(plugin.getProperty(providerId, "forceUserCreate"))) {
-					log.debug("User created, username: " + xdatUser.getUsername());
-					log.debug("User id: " + xdatUser.getID());
-					EventDetails ev = new EventDetails(EventUtils.CATEGORY.PROJECT_ACCESS, EventUtils.TYPE.PROCESS,
-							"added new user", "new user logged in", "OpenID connect new user");
-					try {
-						UserI adminUser = Users.getUser("admin");
-						Users.save(xdatUser, adminUser, true, ev);
-					} catch (Exception e) {
-						log.debug("Ignoring exception:");
-						e.printStackTrace();
-					}
-				}
-				if (Boolean.parseBoolean(userAutoEnabled)) {
-					return new OpenIdAuthToken(xdatUser, "openid");
-				}
-				throw (AuthenticationException) (new NewAutoAccountNotAutoEnabledException(
-						"New OpenID user, needs to to be enabled.", xdatUser));
+				return createUserAccount(providerId, user,xdatUsername);
 			}
 		} catch (final InvalidTokenException e) {
 			throw new BadCredentialsException("Could not obtain user details from token", e);
 		}
 
+	}
+
+	private String buildUsername(final OpenIdConnectUserDetails user, final String providerId, final XdatUserAuthService userAuthService){
+		final String email= user.getEmail();
+		final String preamble= email.split("@")[0];
+		final String sanitizedPreamble = preamble.replaceAll("[^a-zA-Z0-9\\.]", ".") + "-" + providerId;
+
+		int counter=1;
+		String proposedName=sanitizedPreamble + "-" + providerId + "-" + counter;
+		while(userAuthService.hasUserByNameAndAuth(proposedName,"openid",providerId)){
+			proposedName=sanitizedPreamble + "-" + providerId + "-" + (counter++);
+		}
+
+		return proposedName;
+	}
+
+	private Authentication createUserAccount(String providerId, OpenIdConnectUserDetails user, String xdatUsername) throws AuthenticationException {
+		UserI xdatUser;
+		String userAutoEnabled = plugin.getProperty(providerId, "userAutoEnabled");
+		String userAutoVerified = plugin.getProperty(providerId, "userAutoVerified");
+
+		xdatUser = Users.createUser();
+		xdatUser.setEmail(user.getEmail());
+		xdatUser.setLogin(xdatUsername);
+		xdatUser.setFirstname(user.getFirstname());
+		xdatUser.setLastname(user.getLastname());
+		xdatUser.setEnabled(userAutoEnabled);
+		xdatUser.setVerified(userAutoVerified);
+
+		if (Boolean.parseBoolean(plugin.getProperty(providerId, "forceUserCreate"))) {
+			log.debug("User created, username: " + xdatUsername);
+			log.debug("User id: " + xdatUser.getID());
+			EventDetails ev = new EventDetails(EventUtils.CATEGORY.PROJECT_ACCESS, EventUtils.TYPE.PROCESS,
+					"added new user", "new user logged in", "OpenID connect new user");
+			try {
+				XdatUserAuth newUserAuth = new XdatUserAuth(user.getUsername(), XdatUserAuthService.OPENID, providerId, xdatUsername,true,0);
+
+				UserI adminUser = Users.getUser("admin");
+				final UserManagementServiceI service = Users.getUserManagementService();
+				service.save(xdatUser, adminUser, true, ev,newUserAuth);
+			} catch (Exception e) {
+				log.debug("Ignoring exception:");
+				e.printStackTrace();
+			}
+		}
+		if (Boolean.parseBoolean(userAutoEnabled)) {
+			return new OpenIdAuthToken(xdatUser, "openid");
+		}
+		throw (AuthenticationException) (new NewAutoAccountNotAutoEnabledException(
+				"New OpenID user, needs to to be enabled.", xdatUser));
 	}
 
 	private boolean isAllowedEmailDomain(String email, String providerId) {

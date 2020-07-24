@@ -57,7 +57,7 @@ XNAT searches for authentication plugin configurations by looking for files whos
 It looks in the following locations:
 
 * On the classpath in the folder **META-INF/xnat/auth**
-* In a folder named **auth** under the XNAT home folder (usually configured with the **xnat.home** system variable)
+* In a folder structure called **config/auth** under the XNAT home folder (usually configured with the **xnat.home** system variable)
 
 This plugin will use any entries located in any of those properties files where the property **type** is set to "openid". See the sample properties in the resources directory.
 
