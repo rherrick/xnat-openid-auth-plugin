@@ -20,6 +20,9 @@ package au.edu.qcif.xnat.auth.openid;
 import au.edu.qcif.xnat.auth.openid.tokens.OpenIdAuthToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.nrg.xdat.XDAT;
 import org.nrg.xdat.security.helpers.Roles;
 import org.nrg.xdat.security.helpers.UserHelper;
@@ -55,7 +58,9 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
+
 
 /**
  * Main Spring Security authentication filter.
@@ -231,9 +236,11 @@ public class OpenIdConnectFilter extends AbstractAuthenticationProcessingFilter 
 		String domain = emailParts.length >= 2 ? emailParts[1] : null;
 		for (String allowedDomain : allowedDomains) {
 			if (allowedDomain.equalsIgnoreCase(domain)) {
+				log.debug("Matched email {} with allowed domain {} for provider {}", email, allowedDomains, providerId);
 				return true;
 			}
 		}
+		log.debug("Email {} did not match any allowed domains for provider {}: {}", email, providerId, StringUtils.join(allowedDomains, ", "));
 		return false;
 	}
 
