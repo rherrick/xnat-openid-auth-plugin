@@ -12,7 +12,6 @@ buildscript {
 plugins {
     id "application"
     id "eclipse"
-    id "groovy"
     id "idea"
     id "jacoco"
     id "java"
@@ -101,6 +100,11 @@ jacocoTestReport {
     }
 }
 
+def mavenSettingsFile = hasProperty("mavenSettings") ? property("mavenSettings") : "${environment["HOME"]}/.m2/settings.xml"
+mavenSettings {
+    userSettingsFileName = mavenSettingsFile
+}
+
 // Pulls in the Jenkins BUILD_NUMBER environment variable if available.
 def buildDate = new Date()
 def buildNumber = System.getenv().BUILD_NUMBER?.toInteger() ?: "Manual"
@@ -172,7 +176,6 @@ task javadocJar(type: Jar) {
 }
 
 jar {
-    dependsOn test, sourceJar, javadocJar
     enabled = true
     manifest {
         from gitManifest
@@ -180,7 +183,6 @@ jar {
 }
 
 task xnatPluginJar(type: Jar) {
-    dependsOn test, sourceJar, javadocJar
     zip64 true
     archiveClassifier.set "xpl"
     manifest {
